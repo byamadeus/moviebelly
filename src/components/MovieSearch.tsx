@@ -12,7 +12,7 @@ const MovieSearch = ({ onMovieSelect }: MovieSearchProps) => {
   const [results, setResults] = useState<Movie[]>([]);
   const [loading, setLoading] = useState(false);
   const [isFocused, setIsFocused] = useState(false);
-  const debounceTimer = useRef<NodeJS.Timeout>();
+  const debounceTimer = useRef<ReturnType<typeof setTimeout>>();
 
   useEffect(() => {
     if (query.length < 2) {

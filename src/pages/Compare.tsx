@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { useParams, useNavigate, useLocation } from 'react-router-dom';
+import { useParams, useNavigate } from 'react-router-dom';
 import { tmdbService, getImageUrl } from '../services/tmdb';
 import type { Movie } from '../services/tmdb';
 import './Compare.css';
@@ -11,7 +11,6 @@ interface MovieDetails extends Movie {
 const Compare = () => {
   const { movieId } = useParams<{ movieId: string }>();
   const navigate = useNavigate();
-  const location = useLocation();
   const [selectedMovie, setSelectedMovie] = useState<MovieDetails | null>(null);
   const [similarMovies, setSimilarMovies] = useState<Movie[]>([]);
   const [currentIndex, setCurrentIndex] = useState(0);
@@ -87,7 +86,6 @@ const Compare = () => {
   }
 
   const currentMovie = similarMovies[currentIndex];
-  const genres = selectedMovie.genres?.map(g => g.name).join(', ') || 'Movies';
 
   return (
     <div className="compare">

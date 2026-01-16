@@ -6,10 +6,8 @@ import './Home.css';
 
 const Home = () => {
   const navigate = useNavigate();
-  const [selectedMovie, setSelectedMovie] = useState<Movie | null>(null);
 
   const handleMovieSelect = (movie: Movie) => {
-    setSelectedMovie(movie);
     // Navigate to comparison with the selected movie
     navigate(`/compare/${movie.id}`);
   };

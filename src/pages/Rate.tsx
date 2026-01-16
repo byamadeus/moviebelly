@@ -6,7 +6,6 @@ import './Rate.css';
 
 interface MovieDetails extends Movie {
   genres?: { id: number; name: string }[];
-  backdrop_path?: string;
 }
 
 const Rate = () => {
