@@ -1,4 +1,3 @@
-import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import MovieSearch from '../components/MovieSearch';
 import type { Movie } from '../services/tmdb';
