@@ -1,6 +1,6 @@
 import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
-import Home from './pages/Home';
-import GenreSelect from './pages/GenreSelect';
+import Find from './pages/Find';
+import Rate from './pages/Rate';
 import Compare from './pages/Compare';
 import './styles/global.css';
 
@@ -8,9 +8,9 @@ function App() {
   return (
     <Router>
       <Routes>
-        <Route path="/" element={<Home />} />
-        <Route path="/genres" element={<GenreSelect />} />
-        <Route path="/compare/:genreId" element={<Compare />} />
+        <Route path="/" element={<Find />} />
+        <Route path="/rate/:movieId" element={<Rate />} />
+        <Route path="/compare/:movieId" element={<Compare />} />
       </Routes>
     </Router>
   );

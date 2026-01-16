@@ -9,6 +9,9 @@ const tmdbClient = axios.create({
   params: {
     api_key: API_KEY,
   },
+  headers: {
+    'accept': 'application/json',
+  },
 });
 
 export interface Movie {
@@ -19,7 +22,8 @@ export interface Movie {
   overview: string;
   release_date: string;
   vote_average: number;
-  genre_ids: number[];
+  genre_ids?: number[];
+  genres?: Genre[];
 }
 
 export interface Genre {
@@ -65,6 +69,31 @@ export const tmdbService = {
     const response = await tmdbClient.get('/movie/popular', {
       params: { page },
     });
+    return response.data.results;
+  },
+
+  // Get similar movies based on shared genres
+  getSimilarMoviesByGenres: async (genreIds: number[], excludeMovieId: number): Promise<Movie[]> => {
+    // Pick 1-2 primary genres to search with
+    const primaryGenres = genreIds.slice(0, 2).join(',');
+
+    const response = await tmdbClient.get('/discover/movie', {
+      params: {
+        with_genres: primaryGenres,
+        sort_by: 'popularity.desc',
+        page: 1,
+      },
+    });
+
+    // Filter out the original movie and return top results
+    return response.data.results
+      .filter((movie: Movie) => movie.id !== excludeMovieId)
+      .slice(0, 3);
+  },
+
+  // Get similar movies using TMDB's similar endpoint
+  getSimilarMovies: async (movieId: number): Promise<Movie[]> => {
+    const response = await tmdbClient.get(`/movie/${movieId}/similar`);
     return response.data.results;
   },
 };
