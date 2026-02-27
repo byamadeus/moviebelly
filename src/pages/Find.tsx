@@ -1,11 +1,13 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { tmdbService, getImageUrl } from '../services/tmdb';
+import { useUser } from '../contexts/UserContext';
 import type { Movie } from '../services/tmdb';
 import './Find.css';
 
 const Find = () => {
   const navigate = useNavigate();
+  const { profile } = useUser();
   const [query, setQuery] = useState('');
   const [results, setResults] = useState<Movie[]>([]);
   const [loading, setLoading] = useState(false);
@@ -40,7 +42,22 @@ const Find = () => {
   return (
     <div className="find">
       <div className="find__content">
-        <h1 className="find__title">Rank a movie</h1>
+        <div className="find__top-bar">
+          <h1 className="find__title">Rank a movie</h1>
+          <button
+            className="find__profile-button"
+            onClick={() => navigate('/profile')}
+            aria-label="View profile"
+          >
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
+              <circle cx="12" cy="8" r="4" stroke="currentColor" strokeWidth="2"/>
+              <path d="M4 21c0-3.314 3.582-6 8-6s8 2.686 8 6" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/>
+            </svg>
+            {profile && profile.moviesSeen.length > 0 && (
+              <span className="find__profile-badge">{profile.moviesSeen.length}</span>
+            )}
+          </button>
+        </div>
 
         <div className="find__search">
           <div className="find__search-icon">

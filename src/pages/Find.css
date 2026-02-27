@@ -9,12 +9,58 @@
   margin: 0 auto;
 }
 
+.find__top-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 32px;
+}
+
 .find__title {
   font-size: 32px;
   font-weight: 700;
   color: #FFFFFF;
-  margin: 0 0 32px 0;
+  margin: 0;
   letter-spacing: -0.02em;
+}
+
+.find__profile-button {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 50%;
+  color: #9CA3AF;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  padding: 0;
+}
+
+.find__profile-button:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: #E5E7EB;
+  border-color: rgba(255, 255, 255, 0.2);
+}
+
+.find__profile-badge {
+  position: absolute;
+  top: -4px;
+  right: -4px;
+  min-width: 18px;
+  height: 18px;
+  background: #5B7FFF;
+  border-radius: 9px;
+  font-size: 10px;
+  font-weight: 700;
+  color: #FFFFFF;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 4px;
 }
 
 .find__search {

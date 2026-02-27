@@ -218,3 +218,42 @@
 .rate__back-button:hover {
   background: rgba(255, 255, 255, 0.15);
 }
+
+.rate__tag--custom {
+  background: rgba(91, 127, 255, 0.15);
+  border-color: rgba(91, 127, 255, 0.4);
+  border-style: dashed;
+}
+
+.rate__genre-input-wrapper {
+  margin-top: 4px;
+}
+
+.rate__genre-input {
+  width: 100%;
+  padding: 10px 16px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(91, 127, 255, 0.4);
+  border-radius: 20px;
+  font-size: 14px;
+  font-weight: 500;
+  color: #FFFFFF;
+  outline: none;
+  transition: all 0.2s ease;
+}
+
+.rate__genre-input::placeholder {
+  color: #6B7280;
+}
+
+.rate__genre-input:focus {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(91, 127, 255, 0.6);
+}
+
+.rate__continue:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+  transform: none;
+  box-shadow: none;
+}
