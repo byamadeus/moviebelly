@@ -96,6 +96,12 @@ export const tmdbService = {
     const response = await tmdbClient.get(`/movie/${movieId}/similar`);
     return response.data.results;
   },
+
+  // Get now-playing movies for the home screen "Recently Released" section
+  getNowPlayingMovies: async (page: number = 1): Promise<Movie[]> => {
+    const response = await tmdbClient.get('/movie/now_playing', { params: { page } });
+    return response.data.results;
+  },
 };
 
 // Helper to get full image URL

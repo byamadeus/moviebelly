@@ -1,8 +1,7 @@
-import { useEffect, useState, useRef } from 'react';
+import { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { tmdbService, getImageUrl } from '../services/tmdb';
 import { useUser } from '../contexts/UserContext';
-import { createInitialEloRatings } from '../services/storage';
 import type { Movie } from '../services/tmdb';
 import './Rate.css';
 
@@ -13,95 +12,69 @@ interface MovieDetails extends Movie {
 const Rate = () => {
   const { movieId } = useParams<{ movieId: string }>();
   const navigate = useNavigate();
-  const { addRatedMovie, isMovieSeen, addCustomGenre } = useUser();
+  const { addRatedMovie, isMovieRanked, isOnWatchlist, addToWatchlist, removeFromWatchlist, movies } = useUser();
   const [movie, setMovie] = useState<MovieDetails | null>(null);
-  const [similarMovies, setSimilarMovies] = useState<Movie[]>([]);
-  const [selectedGenres, setSelectedGenres] = useState<string[]>([]);
-  const [selectedSimilar, setSelectedSimilar] = useState<number[]>([]);
   const [loading, setLoading] = useState(true);
-  const [customGenreInput, setCustomGenreInput] = useState('');
-  const [showGenreInput, setShowGenreInput] = useState(false);
-  const genreInputRef = useRef<HTMLInputElement>(null);
+  const [detailsOpen, setDetailsOpen] = useState(false);
+  const [saving, setSaving] = useState(false);
 
   useEffect(() => {
-    const fetchMovieDetails = async () => {
-      if (!movieId) return;
-
-      try {
-        const details = await tmdbService.getMovieDetails(parseInt(movieId));
-        setMovie(details);
-
-        if (details.genres) {
-          setSelectedGenres(details.genres.map(g => g.name));
-        }
-
-        const similar = await tmdbService.getSimilarMovies(parseInt(movieId));
-        setSimilarMovies(similar.slice(0, 3));
-        setLoading(false);
-      } catch (error) {
-        console.error('Failed to fetch movie details:', error);
-        setLoading(false);
-      }
-    };
-
-    fetchMovieDetails();
+    if (!movieId) return;
+    setLoading(true);
+    tmdbService.getMovieDetails(parseInt(movieId))
+      .then(setMovie)
+      .catch(() => {})
+      .finally(() => setLoading(false));
   }, [movieId]);
 
-  useEffect(() => {
-    if (showGenreInput && genreInputRef.current) {
-      genreInputRef.current.focus();
-    }
-  }, [showGenreInput]);
+  const ranked = movie ? isMovieRanked(movie.id) : false;
+  const onWatchlist = movie ? isOnWatchlist(movie.id) : false;
+  const existingMovie = movie ? movies.find((m) => m.tmdbId === movie.id) : undefined;
 
-  const toggleGenre = (genre: string) => {
-    setSelectedGenres(prev =>
-      prev.includes(genre) ? prev.filter(g => g !== genre) : [...prev, genre]
-    );
-  };
+  const handleRank = async () => {
+    if (!movie) return;
+    const now = Date.now();
 
-  const toggleSimilar = (id: number) => {
-    setSelectedSimilar(prev =>
-      prev.includes(id) ? prev.filter(i => i !== id) : [...prev, id]
-    );
-  };
-
-  const handleAddCustomGenre = () => {
-    const trimmed = customGenreInput.trim();
-    if (!trimmed) return;
-    if (!selectedGenres.some(g => g.toLowerCase() === trimmed.toLowerCase())) {
-      setSelectedGenres(prev => [...prev, trimmed]);
-      addCustomGenre(trimmed);
-    }
-    setCustomGenreInput('');
-    setShowGenreInput(false);
-  };
-
-  const handleContinue = () => {
-    if (!movie || selectedGenres.length === 0) return;
-
-    // Add movie to profile if not already seen
-    if (!isMovieSeen(movie.id)) {
-      addRatedMovie({
+    // Add to rated movies if not already tracked
+    if (!movies.some((m) => m.tmdbId === movie.id)) {
+      await addRatedMovie({
         tmdbId: movie.id,
         title: movie.title,
         posterPath: movie.poster_path,
-        backdropPath: movie.backdrop_path,
+        backdropPath: movie.backdrop_path ?? null,
         releaseDate: movie.release_date,
         overview: movie.overview,
-        tmdbGenreIds: movie.genres?.map(g => g.id) ?? [],
-        userGenres: selectedGenres,
-        eloRatings: createInitialEloRatings(selectedGenres),
-        addedAt: Date.now(),
-        lastComparedAt: Date.now(),
+        tmdbGenreIds: movie.genres?.map((g) => g.id) ?? [],
+        tmdbGenreNames: movie.genres?.map((g) => g.name) ?? [],
+        addedAt: now,
+        lastUpdatedAt: now,
+        rank: 0,
+        totalRanked: 0,
+        placedAt: 0,
+        placementHistory: [],
       });
     }
 
-    navigate(`/compare/${movie.id}`, {
-      state: {
-        selectedGenres,
-        primaryGenre: selectedGenres[0],
+    navigate(`/compare/${movie.id}`);
+  };
+
+  const handleWatchlist = async () => {
+    if (!movie || saving) return;
+    setSaving(true);
+    try {
+      if (onWatchlist) {
+        await removeFromWatchlist(movie.id);
+      } else {
+        await addToWatchlist({
+          tmdbId: movie.id,
+          title: movie.title,
+          posterPath: movie.poster_path,
+          addedAt: Date.now(),
+        });
       }
-    });
+    } finally {
+      setSaving(false);
+    }
   };
 
   if (loading) {
@@ -123,8 +96,11 @@ const Rate = () => {
     );
   }
 
+  const year = movie.release_date ? new Date(movie.release_date).getFullYear() : null;
+
   return (
     <div className="rate">
+      {/* Backdrop */}
       <div className="rate__backdrop">
         {movie.backdrop_path ? (
           <img src={getImageUrl(movie.backdrop_path, 'w780')} alt="" className="rate__backdrop-image" />
@@ -134,105 +110,68 @@ const Rate = () => {
         <div className="rate__backdrop-overlay" />
       </div>
 
+      {/* Back button */}
+      <button className="rate__nav-back" onClick={() => navigate(-1)} aria-label="Go back">
+        <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
+          <path d="M12 4L6 10L12 16" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+        </svg>
+      </button>
+
       <div className="rate__content">
+        {/* Poster */}
         <div className="rate__header">
           {movie.poster_path && (
             <img src={getImageUrl(movie.poster_path, 'w342')} alt={movie.title} className="rate__poster" />
           )}
         </div>
 
+        {/* Title + year */}
         <h1 className="rate__title">{movie.title}</h1>
+        {year && <p className="rate__year">{year}</p>}
 
-        <div className="rate__section">
-          <h2 className="rate__section-title">How would you describe this movie?</h2>
-          <div className="rate__tags">
-            {movie.genres?.map((genre) => (
-              <button
-                key={genre.id}
-                className={`rate__tag ${selectedGenres.includes(genre.name) ? 'rate__tag--selected' : ''}`}
-                onClick={() => toggleGenre(genre.name)}
-              >
-                {genre.name}
-                {selectedGenres.includes(genre.name) && <span className="rate__tag-remove">&times;</span>}
-              </button>
-            ))}
-            {/* Custom user-added genres */}
-            {selectedGenres
-              .filter(g => !movie.genres?.some(mg => mg.name === g))
-              .map((genre) => (
-                <button
-                  key={genre}
-                  className="rate__tag rate__tag--selected rate__tag--custom"
-                  onClick={() => toggleGenre(genre)}
-                >
-                  {genre}
-                  <span className="rate__tag-remove">&times;</span>
-                </button>
-              ))}
-          </div>
-
-          {showGenreInput ? (
-            <div className="rate__genre-input-wrapper">
-              <input
-                ref={genreInputRef}
-                type="text"
-                className="rate__genre-input"
-                placeholder="Type a genre or tag..."
-                value={customGenreInput}
-                onChange={(e) => setCustomGenreInput(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') handleAddCustomGenre();
-                  if (e.key === 'Escape') { setShowGenreInput(false); setCustomGenreInput(''); }
-                }}
-                onBlur={() => {
-                  if (customGenreInput.trim()) handleAddCustomGenre();
-                  else setShowGenreInput(false);
-                }}
-              />
-            </div>
-          ) : (
-            <button className="rate__add-button" onClick={() => setShowGenreInput(true)}>
-              <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-                <circle cx="8" cy="8" r="7" stroke="currentColor" strokeWidth="1.5"/>
-                <path d="M8 11V5M5 8h6" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
-              </svg>
-              Add a genre or tag...
-            </button>
-          )}
-        </div>
-
-        {similarMovies.length > 0 && (
-          <div className="rate__section">
-            <h2 className="rate__section-title">Was this similar to:</h2>
-            <div className="rate__similar-movies">
-              {similarMovies.map((similar) => (
-                <button
-                  key={similar.id}
-                  className={`rate__tag ${selectedSimilar.includes(similar.id) ? 'rate__tag--selected' : ''}`}
-                  onClick={() => toggleSimilar(similar.id)}
-                >
-                  {similar.title} ({similar.release_date ? new Date(similar.release_date).getFullYear() : '?'})
-                  {selectedSimilar.includes(similar.id) && <span className="rate__tag-remove">&times;</span>}
-                </button>
-              ))}
-            </div>
-            <button className="rate__add-button">
-              <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-                <circle cx="8" cy="8" r="7" stroke="currentColor" strokeWidth="1.5"/>
-                <path d="M8 11V5M5 8h6" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
-              </svg>
-              Add a similar movie...
-            </button>
+        {/* Current rank badge (if already ranked) */}
+        {ranked && existingMovie && (
+          <div className="rate__rank-badge">
+            Currently ranked #{existingMovie.rank} of {existingMovie.totalRanked}
           </div>
         )}
 
+        {/* Action buttons */}
+        <div className="rate__actions">
+          <button className="rate__rank-button" onClick={handleRank}>
+            ★ {ranked ? 'Re-rank' : 'Rank'}
+          </button>
+          <button
+            className={`rate__watchlist-button ${onWatchlist ? 'rate__watchlist-button--saved' : ''}`}
+            onClick={handleWatchlist}
+            disabled={saving}
+          >
+            {onWatchlist ? '🔖 Saved' : '🔖 Save to list'}
+          </button>
+        </div>
+
+        {/* Expandable details */}
         <button
-          className="rate__continue"
-          onClick={handleContinue}
-          disabled={selectedGenres.length === 0}
+          className="rate__details-toggle"
+          onClick={() => setDetailsOpen((v) => !v)}
         >
-          Continue to Rate
+          {detailsOpen ? 'Close Details ▴' : 'Open Details ▾'}
         </button>
+
+        {detailsOpen && (
+          <div className="rate__details">
+            {movie.genres && movie.genres.length > 0 && (
+              <div className="rate__genre-tags">
+                {movie.genres.map((g) => (
+                  <span key={g.id} className="rate__genre-tag">{g.name}</span>
+                ))}
+              </div>
+            )}
+            {movie.overview && (
+              <p className="rate__overview">{movie.overview}</p>
+            )}
+          </div>
+        )}
       </div>
     </div>
   );

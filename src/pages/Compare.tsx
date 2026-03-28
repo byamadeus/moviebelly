@@ -1,115 +1,183 @@
-import { useEffect, useState } from 'react';
-import { useParams, useNavigate, useLocation } from 'react-router-dom';
+import { useEffect, useState, useRef, useCallback } from 'react';
+import { useParams, useNavigate } from 'react-router-dom';
 import { tmdbService, getImageUrl } from '../services/tmdb';
 import { useUser } from '../contexts/UserContext';
 import type { Movie } from '../services/tmdb';
 import type { RatedMovie } from '../types/profile';
+import {
+  initInsertion,
+  getCandidate,
+  applyWin,
+  applyLoss,
+  applyNotAlike,
+  getFinalRank,
+  buildUpdatedRanks,
+  type InsertionState,
+} from '../services/insertion';
 import './Compare.css';
 
 interface MovieDetails extends Movie {
   genres?: { id: number; name: string }[];
 }
 
-interface CompareMovie {
-  tmdbId: number;
-  title: string;
-  posterPath: string | null;
-  releaseDate: string;
+// All globally ranked movies sorted by rank ASC, excluding the new movie
+function getSortedMoviesGlobal(movies: RatedMovie[], excludeTmdbId: number): RatedMovie[] {
+  return movies
+    .filter((m) => m.tmdbId !== excludeTmdbId && m.rank > 0)
+    .sort((a, b) => a.rank - b.rank);
 }
 
 const Compare = () => {
   const { movieId } = useParams<{ movieId: string }>();
   const navigate = useNavigate();
-  const location = useLocation();
-  const { getSeenMoviesInGenre, recordComparison, isMovieSeen } = useUser();
+  const { movies, recordComparison, updateGlobalRanks } = useUser();
 
-  const [selectedMovie, setSelectedMovie] = useState<MovieDetails | null>(null);
-  const [comparisonMovies, setComparisonMovies] = useState<CompareMovie[]>([]);
-  const [currentIndex, setCurrentIndex] = useState(0);
+  const newMovieTmdbId = parseInt(movieId ?? '0');
+
+  // ── State ──────────────────────────────────────────────────────────────────
+  const [newMovie, setNewMovie] = useState<MovieDetails | null>(null);
+  const [insertionState, setInsertionState] = useState<InsertionState | null>(null);
+  const [sortedList, setSortedList] = useState<RatedMovie[]>([]);
   const [loading, setLoading] = useState(true);
+  const [processing, setProcessing] = useState(false);
+  const [autoPlaceMessage, setAutoPlaceMessage] = useState<string | null>(null);
 
-  const state = location.state as { selectedGenres?: string[]; primaryGenre?: string } | null;
-  const primaryGenre = state?.primaryGenre ?? '';
-  const selectedGenres = state?.selectedGenres ?? [];
+  const initialSpanRef = useRef<number>(0);
+  // Stable ref to movies so setup effect doesn't re-run on every movies update
+  const moviesRef = useRef<RatedMovie[]>(movies);
+  useEffect(() => { moviesRef.current = movies; }, [movies]);
 
+  // ── Initial TMDB fetch ────────────────────────────────────────────────────
   useEffect(() => {
-    const setup = async () => {
-      if (!movieId) { navigate('/'); return; }
+    if (!movieId) { navigate('/'); return; }
+    tmdbService.getMovieDetails(parseInt(movieId))
+      .then(setNewMovie)
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, [movieId, navigate]);
 
-      try {
-        const movieDetails = await tmdbService.getMovieDetails(parseInt(movieId));
-        setSelectedMovie(movieDetails);
+  // ── Completion handler ────────────────────────────────────────────────────
+  const handleComplete = useCallback(
+    async (state: InsertionState, list: RatedMovie[]) => {
+      setProcessing(true);
+      const rank = getFinalRank(state);
+      const rawList = list.map((m) => ({ tmdbId: m.tmdbId, rank: m.rank }));
+      const rankedMovies = buildUpdatedRanks(rawList, newMovieTmdbId, rank);
+      await updateGlobalRanks(rankedMovies);
+      setProcessing(false);
+      navigate(`/placement/${movieId}`);
+    },
+    [newMovieTmdbId, updateGlobalRanks, navigate, movieId]
+  );
 
-        // Get movies the user has already seen in this genre
-        const seenMovies = primaryGenre
-          ? getSeenMoviesInGenre(primaryGenre).filter(m => m.tmdbId !== parseInt(movieId))
-          : [];
+  // ── Setup binary insertion (runs once after movie data loads) ─────────────
+  useEffect(() => {
+    if (loading || !movieId) return;
 
-        if (seenMovies.length > 0) {
-          // Compare against seen movies — select up to 5
-          const selected = selectComparisonMovies(seenMovies, 5);
-          setComparisonMovies(selected.map(m => ({
-            tmdbId: m.tmdbId,
-            title: m.title,
-            posterPath: m.posterPath,
-            releaseDate: m.releaseDate,
-          })));
-        } else {
-          // Fallback: use TMDB similar movies for first-time users
-          const genreIds = movieDetails.genres
-            ? movieDetails.genres.map(g => g.id)
-            : movieDetails.genre_ids || [];
+    const currentMovies = moviesRef.current;
+    const list = getSortedMoviesGlobal(currentMovies, newMovieTmdbId);
+    const rawList = list.map((m) => ({ tmdbId: m.tmdbId, rank: m.rank }));
 
-          if (genreIds.length > 0) {
-            const similar = await tmdbService.getSimilarMoviesByGenres(genreIds, movieDetails.id);
-            setComparisonMovies(similar.slice(0, 5).map(m => ({
-              tmdbId: m.id,
-              title: m.title,
-              posterPath: m.poster_path,
-              releaseDate: m.release_date,
-            })));
-          }
-        }
+    setSortedList(list);
 
-        setLoading(false);
-      } catch (error) {
-        console.error('Failed to fetch movies for comparison:', error);
-        setLoading(false);
-      }
-    };
+    const state = initInsertion(rawList);
+    initialSpanRef.current = state.high - state.low;
+    setInsertionState(state);
 
-    setup();
-  }, [movieId, navigate, primaryGenre, getSeenMoviesInGenre]);
-
-  const handleComparison = (winnerId: number) => {
-    if (!selectedMovie) return;
-    const currentMovie = comparisonMovies[currentIndex];
-    const loserId = winnerId === selectedMovie.id ? currentMovie.tmdbId : selectedMovie.id;
-
-    // Only record Elo updates if both movies are in the user's profile
-    if (primaryGenre && isMovieSeen(winnerId) && isMovieSeen(loserId)) {
-      recordComparison(primaryGenre, winnerId, loserId);
+    // Auto-place if no comparisons needed (0 ranked movies)
+    if (getCandidate(state) === null) {
+      const msg = list.length === 0 ? "You're first! Placed at #1." : 'Placed!';
+      setAutoPlaceMessage(msg);
+      const timer = setTimeout(() => {
+        setAutoPlaceMessage(null);
+        handleComplete(state, list);
+      }, 800);
+      return () => clearTimeout(timer);
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loading]); // run once after loading finishes
 
-    if (currentIndex < comparisonMovies.length - 1) {
-      setCurrentIndex(currentIndex + 1);
-    } else {
-      // All comparisons done — go to placement
-      navigate(`/placement/${movieId}/${encodeURIComponent(primaryGenre.toLowerCase())}`);
+  // ── Derived: current comparison candidate ────────────────────────────────
+  const candidateIndex = insertionState ? getCandidate(insertionState) : null;
+  const candidate = candidateIndex !== null ? sortedList[candidateIndex] : null;
+
+  // ── Progress calculation ──────────────────────────────────────────────────
+  const currentSpan = insertionState ? insertionState.high - insertionState.low : 0;
+  const progress = initialSpanRef.current > 0 ? 1 - currentSpan / initialSpanRef.current : 1;
+
+  // ── Action handlers ───────────────────────────────────────────────────────
+
+  const handleWin = () => {
+    if (!insertionState || candidateIndex === null || processing) return;
+
+    recordComparison({
+      movieAId: newMovieTmdbId,
+      movieBId: sortedList[candidateIndex].tmdbId,
+      winnerId: newMovieTmdbId,
+      isDissimilarSignal: false,
+      isSkip: false,
+    }).catch(console.error);
+
+    const newState = applyWin(insertionState, candidateIndex);
+    setInsertionState(newState);
+
+    if (getCandidate(newState) === null) {
+      handleComplete(newState, sortedList);
     }
   };
 
-  const handleSkipComparison = () => {
-    if (currentIndex < comparisonMovies.length - 1) {
-      setCurrentIndex(currentIndex + 1);
-    } else {
-      navigate(`/placement/${movieId}/${encodeURIComponent(primaryGenre.toLowerCase())}`);
+  const handleLoss = () => {
+    if (!insertionState || candidateIndex === null || processing) return;
+
+    recordComparison({
+      movieAId: newMovieTmdbId,
+      movieBId: sortedList[candidateIndex].tmdbId,
+      winnerId: sortedList[candidateIndex].tmdbId,
+      isDissimilarSignal: false,
+      isSkip: false,
+    }).catch(console.error);
+
+    const newState = applyLoss(insertionState, candidateIndex);
+    setInsertionState(newState);
+
+    if (getCandidate(newState) === null) {
+      handleComplete(newState, sortedList);
     }
   };
 
-  const totalComparisons = comparisonMovies.length;
-  const progress = totalComparisons > 0 ? ((currentIndex + 1) / totalComparisons) * 100 : 0;
+  const handleTooDifferent = () => {
+    if (!insertionState || candidateIndex === null || processing) return;
 
+    // Records dissimilarity signal — this IS written to Firestore
+    recordComparison({
+      movieAId: newMovieTmdbId,
+      movieBId: sortedList[candidateIndex].tmdbId,
+      winnerId: null,
+      isDissimilarSignal: true,
+      isSkip: false,
+    }).catch(console.error);
+
+    const newState = applyNotAlike(insertionState, sortedList[candidateIndex].tmdbId);
+    setInsertionState(newState);
+
+    if (getCandidate(newState) === null) {
+      handleComplete(newState, sortedList);
+    }
+  };
+
+  const handleSkip = () => {
+    if (!insertionState || candidateIndex === null || processing) return;
+
+    // Skip → NO Firestore write, just advance the algorithm
+    const newState = applyNotAlike(insertionState, sortedList[candidateIndex].tmdbId);
+    setInsertionState(newState);
+
+    if (getCandidate(newState) === null) {
+      handleComplete(newState, sortedList);
+    }
+  };
+
+  // ── Render guards ─────────────────────────────────────────────────────────
   if (loading) {
     return (
       <div className="compare compare--loading">
@@ -118,124 +186,131 @@ const Compare = () => {
     );
   }
 
-  if (!selectedMovie || comparisonMovies.length === 0) {
+  if (!movieId) {
     return (
       <div className="compare compare--error">
-        <p>No movies to compare against yet.</p>
-        <p className="compare__error-hint">Rate more movies in this genre to start comparing!</p>
-        <button onClick={() => navigate('/')} className="compare__button">
-          Rate Another Movie
-        </button>
+        <p>Something went wrong. Please try again.</p>
+        <button onClick={() => navigate('/')} className="compare__button">Go Home</button>
       </div>
     );
   }
 
-  const currentMovie = comparisonMovies[currentIndex];
+  // Auto-place flash screen
+  if (autoPlaceMessage) {
+    return (
+      <div className="compare compare--auto-place">
+        <div className="compare__auto-place-content">
+          <p className="compare__auto-place-msg">{autoPlaceMessage}</p>
+        </div>
+      </div>
+    );
+  }
+
+  // Processing spinner between comparisons completing
+  if (!insertionState || candidateIndex === null) {
+    return (
+      <div className="compare compare--loading">
+        <div className="compare__spinner" />
+      </div>
+    );
+  }
+
+  const year = (date: string) => date ? new Date(date).getFullYear() : '';
 
   return (
     <div className="compare">
-      {/* Progress bar */}
+      {/* Convergence progress bar */}
       <div className="compare__progress">
-        <div className="compare__progress-bar" style={{ width: `${progress}%` }} />
+        <div
+          className="compare__progress-bar"
+          style={{ width: `${progress * 100}%` }}
+        />
       </div>
 
-      <div className="compare__header">
-        <button className="compare__back" onClick={() => navigate('/')}>
-          <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
-            <path d="M15 18l-6-6 6-6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
-          </svg>
-          Back
-        </button>
-        <span className="compare__counter">{currentIndex + 1} / {totalComparisons}</span>
-        <button className="compare__skip" onClick={() => navigate(`/placement/${movieId}/${encodeURIComponent(primaryGenre.toLowerCase())}`)}>
-          Skip
-          <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
-            <path d="M9 18l6-6-6-6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
-          </svg>
-        </button>
-      </div>
-
+      {/* Question */}
       <div className="compare__question">
-        <h1 className="compare__title">Which movie did you like better?</h1>
-        <div className="compare__tags">
-          {selectedGenres.map((genre) => (
-            <span key={genre} className="compare__tag">
-              {genre}
-              <span className="compare__tag-x">&times;</span>
-            </span>
-          ))}
-        </div>
+        <h1 className="compare__title">Which did you like better?</h1>
       </div>
 
+      {/* Movie cards */}
       <div className="compare__cards">
-        <button className="compare__card" onClick={() => handleComparison(selectedMovie.id)}>
-          {selectedMovie.poster_path ? (
-            <img src={getImageUrl(selectedMovie.poster_path, 'w500')} alt={selectedMovie.title} className="compare__card-poster" />
+        {/* Left card: the new movie being placed */}
+        <button
+          className="compare__card compare__card--new"
+          onClick={handleWin}
+          disabled={processing}
+        >
+          <div className="compare__card-new-badge">NEW</div>
+          {newMovie?.poster_path ? (
+            <img
+              src={getImageUrl(newMovie.poster_path, 'w500')}
+              alt={newMovie.title}
+              className="compare__card-poster"
+            />
           ) : (
-            <div className="compare__card-placeholder" />
+            <div className="compare__card-placeholder">🎬</div>
           )}
           <div className="compare__card-info">
-            <h3 className="compare__card-title">{selectedMovie.title}</h3>
-            <p className="compare__card-director">
-              {selectedMovie.release_date ? new Date(selectedMovie.release_date).getFullYear() : ''}
+            <h3 className="compare__card-title">{newMovie?.title ?? '...'}</h3>
+            <p className="compare__card-year">
+              {newMovie?.release_date ? year(newMovie.release_date) : ''}
             </p>
           </div>
         </button>
 
-        <button className="compare__card" onClick={() => handleComparison(currentMovie.tmdbId)}>
-          {currentMovie.posterPath ? (
-            <img src={getImageUrl(currentMovie.posterPath, 'w500')} alt={currentMovie.title} className="compare__card-poster" />
+        {/* OR divider */}
+        <div className="compare__or-divider">OR</div>
+
+        {/* Right card: existing ranked movie */}
+        <button
+          className="compare__card"
+          onClick={handleLoss}
+          disabled={processing}
+        >
+          {candidate.posterPath ? (
+            <img
+              src={getImageUrl(candidate.posterPath, 'w500')}
+              alt={candidate.title}
+              className="compare__card-poster"
+            />
           ) : (
-            <div className="compare__card-placeholder" />
+            <div className="compare__card-placeholder">🎬</div>
           )}
           <div className="compare__card-info">
-            <h3 className="compare__card-title">{currentMovie.title}</h3>
-            <p className="compare__card-director">
-              {currentMovie.releaseDate ? new Date(currentMovie.releaseDate).getFullYear() : ''}
+            <h3 className="compare__card-title">{candidate.title}</h3>
+            <p className="compare__card-year">
+              {candidate.releaseDate ? year(candidate.releaseDate) : ''}
             </p>
           </div>
         </button>
       </div>
 
+      {/* Footer: Back / Too Different / Skip */}
       <div className="compare__footer">
-        <button className="compare__difficult" onClick={handleSkipComparison}>
-          Too Difficult
+        <button
+          className="compare__footer-btn compare__footer-btn--back"
+          onClick={() => navigate(`/rate/${movieId}`)}
+          disabled={processing}
+        >
+          ← Back
+        </button>
+        <button
+          className="compare__footer-btn compare__footer-btn--different"
+          onClick={handleTooDifferent}
+          disabled={processing}
+        >
+          Too Different
+        </button>
+        <button
+          className="compare__footer-btn compare__footer-btn--skip"
+          onClick={handleSkip}
+          disabled={processing}
+        >
+          Skip →
         </button>
       </div>
     </div>
   );
 };
-
-// Select comparison movies: prioritize variety in Elo scores
-function selectComparisonMovies(movies: RatedMovie[], count: number): RatedMovie[] {
-  if (movies.length <= count) return movies;
-
-  // Sort by Elo and pick spread
-  const sorted = [...movies].sort((a, b) => {
-    const aElo = a.eloRatings[0]?.eloScore ?? 1500;
-    const bElo = b.eloRatings[0]?.eloScore ?? 1500;
-    return bElo - aElo;
-  });
-
-  const result: RatedMovie[] = [];
-  // Pick from top, bottom, and middle
-  result.push(sorted[0]); // highest
-  result.push(sorted[sorted.length - 1]); // lowest
-
-  // Fill the rest from the middle
-  const middle = sorted.slice(1, -1);
-  const step = Math.max(1, Math.floor(middle.length / (count - 2)));
-  for (let i = 0; i < middle.length && result.length < count; i += step) {
-    result.push(middle[i]);
-  }
-
-  // Shuffle to avoid predictable ordering
-  for (let i = result.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [result[i], result[j]] = [result[j], result[i]];
-  }
-
-  return result.slice(0, count);
-}
 
 export default Compare;

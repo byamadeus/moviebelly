@@ -2,6 +2,7 @@
   min-height: 100vh;
   background: #0B0C1A;
   padding: 24px 20px;
+  animation: page-enter 0.3s ease-out both;
 }
 
 .find__content {
@@ -13,7 +14,8 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: 32px;
+  margin-bottom: 20px;
+  min-height: 44px;
 }
 
 .find__title {
@@ -22,6 +24,41 @@
   color: #FFFFFF;
   margin: 0;
   letter-spacing: -0.02em;
+}
+
+/* Large query text shown while searching */
+.find__query-text {
+  font-size: 28px;
+  font-weight: 700;
+  color: #FFFFFF;
+  margin: 0;
+  letter-spacing: -0.02em;
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.find__clear-button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  background: rgba(255, 255, 255, 0.08);
+  border: none;
+  border-radius: 50%;
+  font-size: 14px;
+  color: #9CA3AF;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  flex-shrink: 0;
+  margin-left: 12px;
+}
+
+.find__clear-button:hover {
+  background: rgba(255, 255, 255, 0.14);
+  color: #E5E7EB;
 }
 
 .find__profile-button {
@@ -90,6 +127,7 @@
   color: #FFFFFF;
   outline: none;
   transition: all 0.2s ease;
+  box-sizing: border-box;
 }
 
 .find__search-input::placeholder {
@@ -129,6 +167,8 @@
   font-size: 16px;
 }
 
+/* ── Search results ────────────────────────────────────────────────────────── */
+
 .find__results {
   display: flex;
   flex-direction: column;
@@ -146,6 +186,7 @@
   cursor: pointer;
   transition: all 0.2s ease;
   text-align: left;
+  position: relative;
 }
 
 .find__result:hover {
@@ -197,4 +238,115 @@
   font-size: 14px;
   color: #9CA3AF;
   margin: 0;
+}
+
+/* ── Ranked badge ────────────────────────────────────────────────────────── */
+
+.find__ranked-badge {
+  position: absolute;
+  top: 8px;
+  right: 12px;
+  background: #5B7FFF;
+  color: #FFFFFF;
+  font-size: 10px;
+  font-weight: 700;
+  padding: 3px 8px;
+  border-radius: 6px;
+}
+
+/* ── Home sections ────────────────────────────────────────────────────────── */
+
+.find__section {
+  margin-bottom: 32px;
+}
+
+.find__section-title {
+  font-size: 18px;
+  font-weight: 700;
+  color: #FFFFFF;
+  margin: 0 0 16px 0;
+  letter-spacing: -0.01em;
+}
+
+/* Horizontal scroll row of posters */
+.find__poster-row {
+  display: flex;
+  gap: 10px;
+  overflow-x: auto;
+  padding-bottom: 8px;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+}
+
+.find__poster-row::-webkit-scrollbar {
+  display: none;
+}
+
+/* 2×2 grid for watchlist */
+.find__watchlist-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 10px;
+}
+
+.find__poster-card {
+  position: relative;
+  flex-shrink: 0;
+  border-radius: 10px;
+  overflow: hidden;
+  cursor: pointer;
+  border: none;
+  padding: 0;
+  background: rgba(255, 255, 255, 0.05);
+  transition: transform 0.15s ease;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.find__poster-row .find__poster-card {
+  width: 90px;
+}
+
+.find__watchlist-grid .find__poster-card {
+  width: 100%;
+}
+
+.find__poster-card:active {
+  transform: scale(0.95);
+}
+
+.find__poster-img {
+  width: 100%;
+  aspect-ratio: 2/3;
+  object-fit: cover;
+  display: block;
+}
+
+.find__poster-placeholder {
+  width: 100%;
+  aspect-ratio: 2/3;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 28px;
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.find__poster-card .find__ranked-badge {
+  top: 6px;
+  right: 6px;
+  left: auto;
+}
+
+.find__empty-watchlist {
+  font-size: 15px;
+  color: #6B7280;
+  margin: 0;
+  padding: 20px 0;
+}
+
+@media (max-width: 360px) {
+  .find__watchlist-grid {
+    grid-template-columns: repeat(3, 1fr);
+  }
 }

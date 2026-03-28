@@ -84,3 +84,20 @@ input {
 *:focus:not(:focus-visible) {
   outline: none;
 }
+
+/* Spinner animation used in auth loading state */
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+/* Page enter animation — applied to all page root elements */
+@keyframes page-enter {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}

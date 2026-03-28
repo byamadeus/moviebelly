@@ -1,209 +1,199 @@
 import { createContext, useContext, useState, useEffect, useCallback, type ReactNode } from 'react';
-import type { UserProfile, RatedMovie, GenreStats, GenreRankedMovie, MoviePlacement } from '../types/profile';
-import * as storage from '../services/storage';
-import { updateRatings } from '../services/elo';
-import { createSeedProfile } from '../data/seedProfile';
+import type {
+  RatedMovie,
+  WatchlistItem,
+  MoviePlacement,
+  Comparison,
+} from '../types/profile';
+import {
+  getRatedMovies,
+  addRatedMovie as firestoreAddRatedMovie,
+  saveComparison as firestoreSaveComparison,
+  updateGlobalRanks as firestoreUpdateGlobalRanks,
+  addToWatchlist as firestoreAddToWatchlist,
+  removeFromWatchlist as firestoreRemoveFromWatchlist,
+  addCustomGenre as firestoreAddCustomGenre,
+  resetProfile as firestoreResetProfile,
+  computeGlobalRankings,
+  computeMoviePlacement,
+} from '../services/firestore';
+import { useAuth } from './AuthContext';
 
 interface UserContextValue {
-  profile: UserProfile | null;
+  movies: RatedMovie[];
   loading: boolean;
-  addRatedMovie: (movie: RatedMovie) => void;
-  recordComparison: (
-    genreContext: string,
-    winnerTmdbId: number,
-    loserTmdbId: number
-  ) => void;
-  getRankingsForGenre: (genreKey: string) => GenreRankedMovie[];
-  getGenreStats: () => GenreStats[];
-  getMoviePlacement: (tmdbId: number, genreKey: string) => MoviePlacement | null;
-  addCustomGenre: (genreName: string) => void;
-  getSeenMoviesInGenre: (genreKey: string) => RatedMovie[];
+  // Watchlist (derived from AuthContext profile)
+  watchlist: WatchlistItem[];
+  addToWatchlist: (item: WatchlistItem) => Promise<void>;
+  removeFromWatchlist: (tmdbId: number) => Promise<void>;
+  isOnWatchlist: (tmdbId: number) => boolean;
+  // Movie operations
+  addRatedMovie: (movie: RatedMovie) => Promise<void>;
   isMovieSeen: (tmdbId: number) => boolean;
-  resetProfile: () => void;
+  isMovieRanked: (tmdbId: number) => boolean;
+  // Global ranking operations
+  recordComparison: (comparison: Omit<Comparison, 'id' | 'timestamp'>) => Promise<void>;
+  updateGlobalRanks: (rankedMovies: { tmdbId: number; rank: number; totalRanked: number }[]) => Promise<void>;
+  getRankedMovies: () => RatedMovie[];
+  getMoviePlacement: (tmdbId: number) => MoviePlacement | null;
+  // Dev / misc
+  addCustomGenre: (genreName: string) => Promise<void>;
+  resetProfile: () => Promise<void>;
 }
 
 const UserContext = createContext<UserContextValue | null>(null);
 
 export function UserProvider({ children }: { children: ReactNode }) {
-  const [profile, setProfile] = useState<UserProfile | null>(null);
+  const { firebaseUser, profile, refreshProfile } = useAuth();
+  const [movies, setMovies] = useState<RatedMovie[]>([]);
   const [loading, setLoading] = useState(true);
 
-  // Load profile on mount
+  // Load movies when user changes
   useEffect(() => {
-    let stored = storage.getProfile();
-    if (!stored) {
-      // Seed with test data in development, empty profile in production
-      stored = import.meta.env.DEV ? createSeedProfile() : storage.createProfile();
-      storage.saveProfile(stored);
-    }
-    setProfile(stored);
-    setLoading(false);
-  }, []);
-
-  const addRatedMovie = useCallback((movie: RatedMovie) => {
-    setProfile((prev) => {
-      if (!prev) return prev;
-      const updated = storage.addRatedMovie(prev, movie);
-      return updated;
-    });
-  }, []);
-
-  const recordComparison = useCallback(
-    (genreContext: string, winnerTmdbId: number, loserTmdbId: number) => {
-      setProfile((prev) => {
-        if (!prev) return prev;
-
-        // Find current Elo scores
-        const winnerMovie = prev.moviesSeen.find((m) => m.tmdbId === winnerTmdbId);
-        const loserMovie = prev.moviesSeen.find((m) => m.tmdbId === loserTmdbId);
-        if (!winnerMovie || !loserMovie) return prev;
-
-        const genreKey = genreContext.toLowerCase();
-        const winnerElo = winnerMovie.eloRatings.find((r) => r.genreKey === genreKey)?.eloScore ?? 1500;
-        const loserElo = loserMovie.eloRatings.find((r) => r.genreKey === genreKey)?.eloScore ?? 1500;
-
-        const { winnerNew, loserNew } = updateRatings(winnerElo, loserElo);
-
-        // Update both movies' Elo
-        let updated = storage.updateMovieElo(prev, winnerTmdbId, genreKey, winnerNew, true);
-        updated = storage.updateMovieElo(updated, loserTmdbId, genreKey, loserNew, false);
-
-        // Save comparison record
-        updated = storage.saveComparison(updated, {
-          genreContext: genreKey,
-          winnerTmdbId,
-          loserTmdbId,
-          winnerNewElo: winnerNew,
-          loserNewElo: loserNew,
-        });
-
-        return updated;
-      });
-    },
-    []
-  );
-
-  const getRankingsForGenre = useCallback(
-    (genreKey: string): GenreRankedMovie[] => {
-      if (!profile) return [];
-      const key = genreKey.toLowerCase();
-      const movies = storage.getRatedMoviesByGenre(profile, key);
-
-      return movies
-        .map((m) => {
-          const rating = m.eloRatings.find((r) => r.genreKey === key);
-          return {
-            tmdbId: m.tmdbId,
-            title: m.title,
-            posterPath: m.posterPath,
-            eloScore: rating?.eloScore ?? 1500,
-            comparisons: rating?.comparisons ?? 0,
-            rank: 0, // calculated below
-          };
-        })
-        .sort((a, b) => b.eloScore - a.eloScore)
-        .map((m, i) => ({ ...m, rank: i + 1 }));
-    },
-    [profile]
-  );
-
-  const getGenreStats = useCallback((): GenreStats[] => {
-    if (!profile) return [];
-
-    // Collect all unique genre keys
-    const genreMap = new Map<string, { label: string; movies: Set<number>; comparisons: number }>();
-
-    for (const movie of profile.moviesSeen) {
-      for (const rating of movie.eloRatings) {
-        const existing = genreMap.get(rating.genreKey) ?? {
-          label: rating.genreLabel,
-          movies: new Set<number>(),
-          comparisons: 0,
-        };
-        existing.movies.add(movie.tmdbId);
-        existing.comparisons += rating.comparisons;
-        genreMap.set(rating.genreKey, existing);
-      }
+    if (!firebaseUser) {
+      setMovies([]);
+      setLoading(false);
+      return;
     }
 
-    return Array.from(genreMap.entries())
-      .map(([key, val]) => {
-        const rankings = getRankingsForGenre(key);
-        return {
-          genreKey: key,
-          genreLabel: val.label,
-          movieCount: val.movies.size,
-          totalComparisons: val.comparisons,
-          topMovies: rankings.slice(0, 3),
-        };
-      })
-      .sort((a, b) => b.movieCount - a.movieCount);
-  }, [profile, getRankingsForGenre]);
+    setLoading(true);
+    getRatedMovies(firebaseUser.uid)
+      .then(setMovies)
+      .finally(() => setLoading(false));
+  }, [firebaseUser]);
 
-  const getMoviePlacement = useCallback(
-    (tmdbId: number, genreKey: string): MoviePlacement | null => {
-      if (!profile) return null;
-      const rankings = getRankingsForGenre(genreKey);
-      const entry = rankings.find((r) => r.tmdbId === tmdbId);
-      if (!entry) return null;
+  // ── Watchlist ────────────────────────────────────────────────────────────────
 
-      const movie = profile.moviesSeen.find((m) => m.tmdbId === tmdbId);
-      return {
-        tmdbId,
-        title: movie?.title ?? '',
-        posterPath: movie?.posterPath ?? null,
-        genreKey: genreKey.toLowerCase(),
-        genreLabel: entry.eloScore > 0 ? genreKey : genreKey, // use raw key for label lookup
-        rank: entry.rank,
-        total: rankings.length,
-        eloScore: entry.eloScore,
-      };
+  const watchlist = profile?.watchlist ?? [];
+
+  const addToWatchlist = useCallback(
+    async (item: WatchlistItem) => {
+      if (!firebaseUser) return;
+      await firestoreAddToWatchlist(firebaseUser.uid, item);
+      await refreshProfile();
     },
-    [profile, getRankingsForGenre]
+    [firebaseUser, refreshProfile]
   );
 
-  const addCustomGenre = useCallback((genreName: string) => {
-    setProfile((prev) => {
-      if (!prev) return prev;
-      return storage.addCustomGenre(prev, genreName);
-    });
-  }, []);
-
-  const getSeenMoviesInGenre = useCallback(
-    (genreKey: string): RatedMovie[] => {
-      if (!profile) return [];
-      return storage.getRatedMoviesByGenre(profile, genreKey);
+  const removeFromWatchlist = useCallback(
+    async (tmdbId: number) => {
+      if (!firebaseUser) return;
+      await firestoreRemoveFromWatchlist(firebaseUser.uid, tmdbId);
+      await refreshProfile();
     },
-    [profile]
+    [firebaseUser, refreshProfile]
+  );
+
+  const isOnWatchlist = useCallback(
+    (tmdbId: number) => watchlist.some((w) => w.tmdbId === tmdbId),
+    [watchlist]
+  );
+
+  // ── Movie operations ──────────────────────────────────────────────────────────
+
+  const addRatedMovie = useCallback(
+    async (movie: RatedMovie) => {
+      if (!firebaseUser) return;
+      const exists = movies.some((m) => m.tmdbId === movie.tmdbId);
+      if (exists) return;
+      await firestoreAddRatedMovie(firebaseUser.uid, movie);
+      setMovies((prev) => [...prev, movie]);
+    },
+    [firebaseUser, movies]
   );
 
   const isMovieSeen = useCallback(
-    (tmdbId: number): boolean => {
-      return profile?.moviesSeen.some((m) => m.tmdbId === tmdbId) ?? false;
-    },
-    [profile]
+    (tmdbId: number) =>
+      movies.some((m) => m.tmdbId === tmdbId) || watchlist.some((w) => w.tmdbId === tmdbId),
+    [movies, watchlist]
   );
 
-  const resetProfile = useCallback(() => {
-    storage.clearProfile();
-    const fresh = import.meta.env.DEV ? createSeedProfile() : storage.createProfile();
-    storage.saveProfile(fresh);
-    setProfile(fresh);
-  }, []);
+  const isMovieRanked = useCallback(
+    (tmdbId: number) => movies.some((m) => m.tmdbId === tmdbId && m.rank > 0),
+    [movies]
+  );
+
+  // ── Global ranking operations ─────────────────────────────────────────────────
+
+  const recordComparison = useCallback(
+    async (comparison: Omit<Comparison, 'id' | 'timestamp'>) => {
+      if (!firebaseUser) return;
+      await firestoreSaveComparison(firebaseUser.uid, comparison);
+    },
+    [firebaseUser]
+  );
+
+  const doUpdateGlobalRanks = useCallback(
+    async (rankedMovies: { tmdbId: number; rank: number; totalRanked: number }[]) => {
+      if (!firebaseUser) return;
+      await firestoreUpdateGlobalRanks(firebaseUser.uid, rankedMovies);
+
+      const now = Date.now();
+      setMovies((prev) =>
+        prev.map((movie) => {
+          const update = rankedMovies.find((r) => r.tmdbId === movie.tmdbId);
+          if (!update) return movie;
+          return {
+            ...movie,
+            rank: update.rank,
+            totalRanked: update.totalRanked,
+            placedAt: now,
+            placementHistory: [
+              ...(movie.placementHistory ?? []),
+              { rank: update.rank, totalRanked: update.totalRanked, placedAt: now },
+            ],
+            lastUpdatedAt: now,
+          };
+        })
+      );
+    },
+    [firebaseUser]
+  );
+
+  const getRankedMovies = useCallback(
+    (): RatedMovie[] => computeGlobalRankings(movies),
+    [movies]
+  );
+
+  const getMoviePlacement = useCallback(
+    (tmdbId: number): MoviePlacement | null => computeMoviePlacement(movies, tmdbId),
+    [movies]
+  );
+
+  // ── Dev / misc ────────────────────────────────────────────────────────────────
+
+  const addCustomGenre = useCallback(
+    async (genreName: string) => {
+      if (!firebaseUser) return;
+      await firestoreAddCustomGenre(firebaseUser.uid, genreName);
+    },
+    [firebaseUser]
+  );
+
+  const resetProfile = useCallback(async () => {
+    if (!firebaseUser) return;
+    await firestoreResetProfile(firebaseUser.uid);
+    setMovies([]);
+    await refreshProfile();
+  }, [firebaseUser, refreshProfile]);
 
   return (
     <UserContext.Provider
       value={{
-        profile,
+        movies,
         loading,
+        watchlist,
+        addToWatchlist,
+        removeFromWatchlist,
+        isOnWatchlist,
         addRatedMovie,
+        isMovieSeen,
+        isMovieRanked,
         recordComparison,
-        getRankingsForGenre,
-        getGenreStats,
+        updateGlobalRanks: doUpdateGlobalRanks,
+        getRankedMovies,
         getMoviePlacement,
         addCustomGenre,
-        getSeenMoviesInGenre,
-        isMovieSeen,
         resetProfile,
       }}
     >

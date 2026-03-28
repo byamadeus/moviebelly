@@ -5,6 +5,7 @@
   flex-direction: column;
   padding: 20px;
   padding-top: 28px;
+  animation: page-enter 0.3s ease-out both;
 }
 
 .compare__progress {
@@ -141,8 +142,8 @@
 
 .compare__cards {
   display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 16px;
+  grid-template-columns: 1fr auto 1fr;
+  gap: 0;
   flex: 1;
   margin-bottom: 32px;
 }
@@ -154,11 +155,13 @@
   border-radius: 16px;
   overflow: hidden;
   cursor: pointer;
-  transition: all 0.2s ease;
+  transition: transform 0.15s ease, box-shadow 0.15s ease, border-color 0.15s ease, background 0.15s ease;
   padding: 0;
   display: flex;
   height: fit-content;
   flex-direction: column;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
 }
 
 .compare__card:hover {
@@ -169,7 +172,32 @@
 }
 
 .compare__card:active {
-  transform: translateY(-2px);
+  transform: scale(0.97);
+  box-shadow: none;
+}
+
+/* ─── OR divider between cards ───────────────────────────────────────────── */
+
+.compare__or-divider {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 0 10px;
+  gap: 8px;
+  color: #4B5563;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  user-select: none;
+}
+
+.compare__or-divider::before,
+.compare__or-divider::after {
+  content: '';
+  width: 1px;
+  flex: 1;
+  background: rgba(255, 255, 255, 0.07);
 }
 
 .compare__card-poster {
@@ -218,10 +246,119 @@
 
 .compare__footer {
   display: flex;
-  justify-content: center;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  padding: 0 4px;
 }
 
-.compare__difficult {
+.compare__footer-btn {
+  flex: 1;
+  padding: 12px 8px;
+  border-radius: 12px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  border: none;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+}
+
+.compare__footer-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.compare__footer-btn--back {
+  background: transparent;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  color: #9CA3AF;
+}
+
+.compare__footer-btn--back:hover {
+  background: rgba(255, 255, 255, 0.05);
+  color: #E5E7EB;
+}
+
+.compare__footer-btn--different {
+  background: transparent;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  color: #9CA3AF;
+}
+
+.compare__footer-btn--different:hover {
+  background: rgba(255, 255, 255, 0.05);
+  color: #E5E7EB;
+}
+
+.compare__footer-btn--skip {
+  background: transparent;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  color: #9CA3AF;
+}
+
+.compare__footer-btn--skip:hover {
+  background: rgba(255, 255, 255, 0.05);
+  color: #E5E7EB;
+}
+
+/* ─── Genre context header ───────────────────────────────────────────────── */
+
+.compare__genre-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+
+.compare__genre-progress {
+  font-size: 13px;
+  font-weight: 500;
+  color: #6B7280;
+}
+
+.compare__genre-label {
+  font-size: 14px;
+  font-weight: 600;
+  color: #D1D5DB;
+  background: rgba(91, 127, 255, 0.12);
+  border: 1px solid rgba(91, 127, 255, 0.25);
+  border-radius: 10px;
+  padding: 4px 12px;
+}
+
+/* ─── "NEW" badge on new-movie card ─────────────────────────────────────── */
+
+.compare__card--new {
+  border-color: rgba(91, 127, 255, 0.35);
+}
+
+.compare__card-new-badge {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  background: #5B7FFF;
+  color: #FFFFFF;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  padding: 3px 8px;
+  border-radius: 6px;
+  z-index: 2;
+}
+
+/* ─── Card year subtitle ─────────────────────────────────────────────────── */
+
+.compare__card-year {
+  font-size: 13px;
+  color: #9CA3AF;
+  margin: 0;
+}
+
+/* ─── "These don't feel alike" button ───────────────────────────────────── */
+
+.compare__not-alike {
   padding: 12px 32px;
   background: transparent;
   border: 1px solid rgba(255, 255, 255, 0.15);
@@ -233,10 +370,113 @@
   transition: all 0.2s ease;
 }
 
-.compare__difficult:hover {
+.compare__not-alike:hover {
   background: rgba(255, 255, 255, 0.05);
   border-color: rgba(255, 255, 255, 0.25);
   color: #E5E7EB;
+}
+
+.compare__not-alike:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+/* ─── Wrong-genre prompt ─────────────────────────────────────────────────── */
+
+.compare__wrong-genre-prompt {
+  margin-top: 20px;
+  padding: 16px;
+  background: rgba(245, 158, 11, 0.08);
+  border: 1px solid rgba(245, 158, 11, 0.25);
+  border-radius: 14px;
+  animation: slide-up 0.25s ease-out both;
+}
+
+@keyframes slide-up {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+.compare__wrong-genre-prompt p {
+  font-size: 14px;
+  line-height: 1.5;
+  color: #D1D5DB;
+  margin: 0 0 12px 0;
+}
+
+.compare__wrong-genre-actions {
+  display: flex;
+  gap: 10px;
+}
+
+.compare__wrong-genre-actions button {
+  flex: 1;
+  padding: 10px 14px;
+  border-radius: 10px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.compare__wrong-genre-actions button:first-child {
+  background: transparent;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  color: #9CA3AF;
+}
+
+.compare__wrong-genre-actions button:first-child:hover {
+  background: rgba(255, 255, 255, 0.06);
+  color: #D1D5DB;
+}
+
+.compare__wrong-genre-actions button:last-child {
+  background: rgba(245, 158, 11, 0.15);
+  border: 1px solid rgba(245, 158, 11, 0.35);
+  color: #F59E0B;
+}
+
+.compare__wrong-genre-actions button:last-child:hover {
+  background: rgba(245, 158, 11, 0.22);
+}
+
+/* ─── Auto-place flash screen ────────────────────────────────────────────── */
+
+.compare--auto-place {
+  justify-content: center;
+  align-items: center;
+}
+
+.compare__auto-place-content {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+  animation: fade-in 0.3s ease-out both;
+}
+
+@keyframes fade-in {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+.compare__genre-badge {
+  display: inline-block;
+  padding: 6px 16px;
+  background: rgba(91, 127, 255, 0.15);
+  border: 1px solid rgba(91, 127, 255, 0.3);
+  border-radius: 20px;
+  font-size: 14px;
+  font-weight: 600;
+  color: #5B7FFF;
+}
+
+.compare__auto-place-msg {
+  font-size: 18px;
+  font-weight: 600;
+  color: #FFFFFF;
+  text-align: center;
+  margin: 0;
 }
 
 @media (max-width: 480px) {
@@ -244,8 +484,9 @@
     font-size: 20px;
   }
 
-  .compare__cards {
-    gap: 12px;
+  .compare__or-divider {
+    padding: 0 6px;
+    font-size: 10px;
   }
 
   .compare__card-info {
