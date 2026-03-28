@@ -206,8 +206,8 @@ const Compare = () => {
     );
   }
 
-  // Processing spinner between comparisons completing
-  if (!insertionState || candidateIndex === null) {
+  // Processing spinner while binary insertion is settling
+  if (!insertionState || candidateIndex === null || !candidate) {
     return (
       <div className="compare compare--loading">
         <div className="compare__spinner" />
